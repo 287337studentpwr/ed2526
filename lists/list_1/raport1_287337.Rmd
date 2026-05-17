@@ -1,0 +1,357 @@
+---
+title: "Lista_1"
+author: "Jakub Okła, album 287337"
+date: "2026-04-03"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+    fig_caption: true
+header-includes:
+  - \usepackage{float}
+  - \usepackage[polish]{babel}
+geometry: margin=2cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.align = "center",
+  fig.width = 7,
+  fig.height = 3.5,
+  out.width = "85%",
+  dev = "png",
+  dpi = 300
+)
+library(dplyr)
+```
+## Przygotowanie danych. Podstawowe informacje o danych.
+
+### Wczytanie danych
+```{r}
+data <- read.csv(file="data/WA_Fn-UseC_-Telco-Customer-Churn.csv", stringsAsFactors = TRUE)
+data$SeniorCitizen <- factor(data$SeniorCitizen, levels= c(0,1), labels = c("No", "Yes"))
+data$tenure <- as.numeric(data$tenure)
+```
+### Podstawowe informacje o danych
+Zbiór danych składa się z **`r nrow(data)`** obserwacji oraz **`r ncol(data)`** zmiennych.
+```{r, include=FALSE}
+sapply(data, class)
+```
+#### W zbiorze występują:
+
+- zmienne jakościowe (typ `factor`), np. gender, Partner, Contract,
+- zmienne ilościowe (typ `numeric`), np. tenure, MonthlyCharges, TotalCharges,
+
+#### Usunięcie zbędnych danych:
+
+Nie wszystkie cechy zawarte w zbiorze danych są przydatne w analizie.
+W szczególności zmienna `customerID` pełni wyłącznie rolę identyfikatora klientów i nie zawiera informacji analitycznej, która mogłaby wpływać na wyniki analizy.
+
+
+```{r}
+data <- data %>% select(-customerID)
+```
+
+
+#### Brakujące obserwacje
+
+```{r, include=FALSE}
+colSums(is.na(data)) # W TotalCharges mamy 11
+colSums(data == "", na.rm = TRUE)
+```
+W zbiorze danych występują brakujące obserwacje.
+Zostały one zidentyfikowane przy użyciu funkcji `is.na()`, która wykazała obecność **11** brakujących wartości w zmiennej TotalCharges.
+Dodatkowo sprawdzono możliwość występowania braków zakodowanych jako puste ciągi znaków (""), jednak nie stwierdzono ich obecności.
+Oznacza to, że brakujące dane są zakodowane jako wartości NA. Poza nimi w zbiorze danych nie znajdują się inne nietypowe wartości.
+
+#### Usunięcie brakujących obserwacji
+
+Ponieważ odsetek brakujących obserwacji jest niewielki w stosunku do całej liczby danych, ich usunięcie nie powinno istotnie wpłynąć na wyniki przeprowadzonej analizy.
+
+```{r}
+data <- na.omit(data)
+```
+
+## Analiza opisowa  
+
+### Podstawowe wskaźniki sumaryczne
+```{r, echo=FALSE}
+numeric_data <- data %>%
+  select(where(is.numeric))
+
+summary(numeric_data)
+```
+
+- zmienna *staż klienta (tenure)* przyjmuje wartości od **`r min(data$tenure)`** do około **`r max(data$tenure)`**  miesięcy,
+- zmienna *miesięczne opłaty (MonthlyCharges)* przyjmuje wartości od **`r min(data$MonthlyCharges)`** do **`r max(data$MonthlyCharges)`**,
+- zmienna *całkowite opłaty (TotalCharges)* przyjmuje wartości od **`r min(data$TotalCharges)`** do **`r max(data$TotalCharges)`**.
+
+Oznacza to, że dane obejmują zarówno nowych klientów, jak i klientów o długim stażu oraz szeroki zakres poziomów opłat.
+
+## Wykresy
+
+
+```{r, fig.height = 5, echo=FALSE}
+hist(data$tenure, main="Staż klienta", col="#A8D5BA", xlab = "Staż klienta (w miesiącach)", ylab = "Liczba klientów")
+```
+
+Na wykresie przedstawiono rozkład stażu klientów (w miesiącach).
+Widoczna jest duża liczba klientów o bardzo krótkim stażu, co może oznaczać częste pozyskiwanie nowych klientów.
+Jednocześnie zauważalna jest również grupa klientów o długim stażu, co wskazuje na obecność klientów lojalnych.
+
+```{r, echo=FALSE}
+barplot(table(data$InternetService),
+        main = "Usługa internetowa",
+        col = "lightblue",
+        names.arg = c("DSL", "Światłowód", "Brak internetu"))
+```
+
+Najwięcej klientów korzysta z internetu światłowodowego, mniej z DSL, a najmniej nie korzysta z internetu. Oznacza to, że większość klientów posiada aktywną usługę internetową.
+
+```{r, echo=FALSE}
+par(mfrow = c(1, 2))
+hist(data$MonthlyCharges, main="Miesięczne opłaty", col="#A8D5BA", xlab="Miesięczne opłaty", ylab="Liczba klientów")
+hist(data$TotalCharges, main="Całkowite opłaty", col="grey", xlab="Całkowite opłaty", ylab="Liczba klientów")
+```
+
+Rozkład miesięcznych opłat jest zróżnicowany i nie ma charakteru symetrycznego. 
+Można zauważyć większe zagęszczenie obserwacji w przedziałach średnich i wyższych wartości, 
+co sugeruje, że znaczna część klientów korzysta z bardziej rozbudowanych i droższych pakietów usług.
+
+Rozkład całkowitych opłat jest silnie asymetryczny. 
+Większość klientów generuje stosunkowo niskie wartości całkowitych opłat, 
+natomiast niewielka grupa osiąga bardzo wysokie wartości. 
+Jest to związane z faktem, że całkowite opłaty rosną wraz ze stażem klienta, 
+co powoduje kumulację wysokich wartości dla klientów długo korzystających z usług.
+
+
+
+```{r, echo=FALSE}
+manipulated_data_1 <- data %>%
+  group_by(InternetService) %>%
+  summarise(average_monthly_payment = mean(MonthlyCharges, na.rm = TRUE))
+
+barplot(manipulated_data_1$average_monthly_payment,
+        col = "#A8D5BA",
+        main = "Średnie miesięczne opłaty wg typu internetu",
+        names.arg = c("DSL", "Światłowód", "Brak internetu"),
+        ylab = "Średnia MonthlyCharges")
+
+```
+
+Internet światłowodowy charakteryzuje się najwyższymi średnimi miesięcznymi opłatami. 
+Biorąc pod uwagę, że jest to najczęściej wybierana usługa (co pokazano na wcześniejszych wykresach), 
+wyjaśnia to duży udział klientów ponoszących ponadprzeciętne miesięczne koszty.
+
+
+```{r, fig.height= 5, echo=FALSE}
+prop <- prop.table(table(data$Churn))
+names(prop) <- c("Nie", "Tak")
+labels <- paste0(names(prop), " (", round(prop * 100, 1), "%)")
+
+pie(prop,
+    labels = labels,
+    main = "Czy klient odszedł",
+    col = c("lightblue", "salmon"))
+```
+
+Większość klientów (73,5%) pozostaje w firmie, jednak zauważalna część (26,5%) rezygnuje z usług, co wskazuje na istotny problem odpływu klientów. Celem dalszej analizy będzie odpowiedź na pytanie, dlaczego odsetek klientów rezygnujących z usług jest tak wysoki.
+
+### Wykresy zależności
+
+
+```{r, fig.height = 4.5, echo=FALSE}
+plot(data$tenure, data$MonthlyCharges,
+     xlab = "Staż klienta (miesiące)",
+     ylab = "Miesięczne opłaty",
+     main = "Zależność między stażem klienta a miesięcznymi opłatami",
+     col = "#4E79A7",
+     pch = 16,
+     cex = 0.6)
+
+abline(lm(data$MonthlyCharges ~ data$tenure),
+       col = "#E15759",
+       lwd = 2)
+```
+
+Pomiędzy *stażem klienta* a *miesięcznymi opłatami* występuje słaba zależność liniowa. Można zauważyć, że klienci z dłuższym stażem przeciętnie płacą nieco więcej miesięcznie niż klienci z krótszym stażem, jednak zależność ta nie jest wyraźna.
+
+```{r, fig.height = 4.5, echo=FALSE}
+plot(data$MonthlyCharges, data$TotalCharges,
+     xlab = "Miesięczne opłaty",
+     ylab = "Całkowite opłaty",
+     main = "Zależność między miesięcznymi a całkowitymi opłatami",
+     col = "#4E79A7",
+     pch = 16,
+     cex = 0.6)
+
+abline(lm(data$TotalCharges ~ data$MonthlyCharges),
+       col = "#E15759",
+       lwd = 2)
+```
+
+Pomiędzy *miesięcznymi opłatami* a *całkowitymi opłatami* występuje silna zależność liniowa dodatnia. Klienci ponoszący wyższe opłaty miesięczne osiągają wyższe wartości całkowitych opłat.
+
+```{r, fig.height = 4.5, echo=FALSE}
+plot(data$tenure, data$TotalCharges,
+     xlab = "Staż klienta (miesiące)",
+     ylab = "Całkowite opłaty",
+     main = "Zależność między stażem klienta a całkowitymi opłatami",
+     col = "#4E79A7",
+     pch = 16,
+     cex = 0.6)
+
+abline(lm(data$TotalCharges ~ data$tenure),
+       col = "#E15759",
+       lwd = 2)
+```
+
+
+Pomiędzy *stażem klienta* a *całkowitymi opłatami* występuje silna zależność liniowa dodatnia. Klienci korzystający z usług przez dłuższy czas generują wyższe całkowite opłaty.
+
+### Interpretacja wyników
+
+Rozkłady zmiennych ilościowych nie są symetryczne.
+
+- W przypadku zmiennej *tenure* widoczna jest większa liczba klientów o krótkim stażu, co powoduje asymetrię rozkładu.
+- W przypadku zmiennej *MonthlyCharges* rozkład jest bardziej zróżnicowany, jednak również nie jest idealnie symetryczny.
+- Zmienna *TotalCharges* charakteryzuje się silną asymetrią, co wynika z faktu, że całkowite opłaty rosną wraz ze stażem klienta.
+
+Największą zmiennością charakteryzuje się zmienna *TotalCharges*, co wynika z dużego zakresu przyjmowanych wartości.
+
+
+#### Zmienne jakościowe
+
+Analiza zmiennych jakościowych pokazuje, że częstości poszczególnych kategorii są zróżnicowane.
+
+- W przypadku zmiennej *InternetService* najwięcej klientów korzysta z internetu światłowodowego, mniej z usług DSL, a najmniej nie korzysta z internetu.
+- W przypadku zmiennej *Churn* większość klientów pozostaje w firmie, jednak zauważalna część klientów rezygnuje z usług.
+
+Oznacza to, że niektóre kategorie dominują w zbiorze danych, co może mieć wpływ na dalszą analizę.
+
+## Analiza opisowa z podziałem na grupy
+```{r, include=FALSE}
+inactive_customers <- data %>% filter(Churn=="Yes")
+active_customers <- data %>% filter(Churn=="No")
+glimpse(inactive_customers)
+glimpse(active_customers)
+```
+### Rodzaj kontraktów
+```{r, echo=FALSE}
+par(mfrow = c(1, 2))
+
+barplot(table(active_customers$Contract),
+        main = "Aktywni klienci",
+        col = "lightblue",
+        cex.names = 0.7)
+barplot(table(inactive_customers$Contract),
+        main = "Klienci Odchodzący",
+        col = "salmon",
+        cex.names = 0.7)
+
+par(mfrow = c(1, 1))  
+```
+
+Większość klientów, którzy zakończyli współpracę, korzystała z umów typu month-to-month. Wskazuje to, że jednym z kluczowych kierunków działań powinno być zwiększenie udziału klientów związanych długoterminowymi kontraktami.
+
+### Rodzaj internetu
+```{r, echo=FALSE}
+par(mfrow = c(1, 2))
+
+barplot(table(active_customers$InternetService),
+        main = "Aktywni klienci",
+        col = "lightblue",
+        names.arg = c("DSL", "Światłowód", "Brak internetu"),
+        cex.names = 0.7)
+barplot(table(inactive_customers$InternetService),
+        main = "Klienci Odchodzący",
+        col = "salmon",
+        names.arg = c("DSL", "Światłowód", "Brak internetu"),
+        cex.names = 0.7)
+
+par(mfrow = c(1, 1))  
+```
+
+Klienci rezygnujący z usług w zdecydowanej większości korzystają z internetu światłowodowego, co może sugerować potencjalne problemy z jakością tej usługi.
+
+### Wsparcie Techniczne
+```{r, echo=FALSE}
+par(mfrow = c(1, 2))
+
+barplot(table(active_customers$TechSupport),
+        main = "Aktywni klienci",
+        col = "lightblue",
+        names.arg = c("Nie", "Brak internetu", "Tak"),
+        cex.names = 0.7)
+barplot(table(inactive_customers$TechSupport),
+        main = "Klienci Odchodzący",
+        col = "salmon",
+        names.arg = c("Nie", "Brak internetu", "Tak"),
+        cex.names = 0.7)
+
+par(mfrow = c(1, 1))  
+```
+
+Dodatkowa analiza wskazuje, że klienci odchodzący często nie posiadają wsparcia technicznego, co może istotnie wpływać na ich poziom satysfakcji. Brak dostępu do szybkiej i skutecznej pomocy w przypadku problemów technicznych - szczególnie przy usłudze tak wrażliwej na jakość jak internet światłowodowy - może prowadzić do frustracji użytkowników i w konsekwencji zwiększać skłonność do rezygnacji. Sugeruje to, że istotnym kierunkiem działań powinno być nie tylko monitorowanie i poprawa jakości samej usługi, ale również zwiększenie dostępności oraz atrakcyjności pakietów obejmujących wsparcie techniczne, np. poprzez ich lepszą komunikację, bundling lub oferowanie jako standardowego elementu usługi.
+
+### Staż klienta vs churn
+
+```{r, echo=FALSE}
+boxplot(tenure ~ Churn,
+        data = data,
+        col = c("lightblue", "salmon"),
+        main = "Staż klienta a odejście z firmy",
+        xlab = "Churn",
+        ylab = "Staż klienta (miesiące)")
+```
+
+Wykres pudełkowy pokazuje, że klienci odchodzący z firmy mają zazwyczaj krótszy staż niż klienci lojalni. Może to oznaczać, że największe ryzyko odejścia występuje w początkowym okresie korzystania z usług.
+
+### Miesięczne opłaty vs churn
+
+```{r, echo=FALSE}
+boxplot(MonthlyCharges ~ Churn,
+        data = data,
+        col = c("lightblue", "salmon"),
+        main = "Miesięczne opłaty a odejście z firmy",
+        xlab = "Churn",
+        ylab = "Miesięczne opłaty")
+```
+
+Klienci odchodzący z firmy częściej ponoszą wyższe miesięczne opłaty niż klienci pozostający. Może to wskazywać, że wysoki koszt usług zwiększa skłonność do rezygnacji. Zjawisko to jest prawdopodobnie powiązane z faktem, że oferta internetu światłowodowego jest droższa od pozostałych usług, a jednocześnie - jak wcześniej zaobserwowano - to właśnie użytkownicy światłowodu najczęściej decydują się na zakończenie współpracy z firmą.
+
+## Podsumowanie i wnioski
+
+### Podsumowanie wyników analizy
+
+Przeprowadzona analiza obejmowała przygotowanie danych, analizę opisową oraz porównanie klientów lojalnych i odchodzących. W pierwszym etapie zidentyfikowano typy zmiennych, usunięto zbędne informacje (zmienną identyfikacyjną) oraz przeanalizowano brakujące dane. W drugim etapie wyznaczono podstawowe statystyki opisowe i przedstawiono rozkłady zmiennych za pomocą wykresów. W trzecim etapie dokonano analizy porównawczej klientów odchodzących i pozostających w firmie.
+
+Na podstawie przeprowadzonych analiz można stwierdzić, że dane są zróżnicowane zarówno pod względem cech ilościowych, jak i jakościowych, a pomiędzy wybranymi zmiennymi występują istotne zależności. Szczególnie widoczne są zależności pomiędzy stażem klienta a całkowitymi opłatami oraz pomiędzy miesięcznymi a całkowitymi opłatami.
+
+### Charakterystyka klientów
+
+Analiza pozwoliła lepiej poznać strukturę klientów firmy. Klienci różnią się przede wszystkim długością korzystania z usług, poziomem ponoszonych opłat oraz zakresem wykorzystywanych usług dodatkowych.
+
+Większość klientów korzysta z usług internetowych, przy czym najpopularniejszą opcją jest internet światłowodowy. Istotna część klientów korzysta również z usług dodatkowych, takich jak wsparcie techniczne, jednak nie wszyscy decydują się na ich wykupienie.
+
+W zbiorze danych występują zarówno klienci nowi, jak i osoby korzystające z usług przez długi czas, co wskazuje na zróżnicowaną bazę klientów pod względem lojalności i zaangażowania.
+
+### Przyczyny odchodzenia klientów i rekomendacje
+
+Na podstawie analizy z podziałem na grupy można wskazać cechy charakterystyczne klientów odchodzących z firmy. Są to najczęściej osoby:
+
+- o krótkim stażu (niewielka liczba miesięcy korzystania z usług),
+- korzystające z umów typu month-to-month,
+- ponoszące relatywnie wysokie miesięczne opłaty,
+- korzystające z internetu światłowodowego,
+- nieposiadające wsparcia technicznego.
+
+Wyniki te sugerują, że główną przyczyną odchodzenia klientów może być połączenie wysokich kosztów usług z niewystarczającym poziomem wsparcia oraz brakiem długoterminowego związania z firmą. Szczególnie istotna wydaje się sytuacja klientów korzystających z internetu światłowodowego, którzy mimo wyższych opłat częściej decydują się na rezygnację, co może wskazywać na problemy z jakością usługi lub niedopasowanie oferty do ich oczekiwań.
+
+Aby przeciwdziałać odchodzeniu klientów, firma powinna:
+
+- zachęcać klientów do zawierania dłuższych umów (np. poprzez rabaty lub dodatkowe korzyści),
+- zwiększyć dostępność i atrakcyjność wsparcia technicznego,
+- monitorować jakość usług, szczególnie w zakresie internetu światłowodowego,
+- zwrócić szczególną uwagę na nowych klientów w początkowym okresie współpracy,
+- lepiej dopasować ofertę cenową do potrzeb klientów, zwłaszcza w segmencie usług o wyższych opłatach.
