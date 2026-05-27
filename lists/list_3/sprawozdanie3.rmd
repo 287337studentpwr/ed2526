@@ -1,0 +1,9 @@
+install.packages(c(
+  "tidyverse",
+  "rmarkdown",
+  "knitr",
+  "tinytex",
+  "readxl",
+  "corrplot",
+  "factoextra"
+))
