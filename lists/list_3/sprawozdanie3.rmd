@@ -1,9 +1,11 @@
-install.packages(c(
-  "tidyverse",
-  "rmarkdown",
-  "knitr",
-  "tinytex",
-  "readxl",
-  "corrplot",
-  "factoextra"
-))
+```{r, include=FALSE}
+irysy = iris
+irysy <- irysy %>% rename(all_of(c(PL = 'Petal.Length',
+                                    PW = 'Petal.Width',
+                                    SL = 'Sepal.Length',
+                                    SW = 'Sepal.Width')))
+
+split <- irysy %>% initial_split(prop = 2/3) 
+train <- training(split)
+test <- testing(split)
+```
