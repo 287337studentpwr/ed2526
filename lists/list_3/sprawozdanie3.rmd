@@ -1,11 +1,248 @@
-```{r, include=FALSE}
-irysy = iris
-irysy <- irysy %>% rename(all_of(c(PL = 'Petal.Length',
-                                    PW = 'Petal.Width',
-                                    SL = 'Sepal.Length',
-                                    SW = 'Sepal.Width')))
+---
+title: "Sprawozdanie_3"
+author: "Jakub Okła, album 287337"
+date: "2026-04-03"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+    fig_caption: true
+header-includes:
+  - \usepackage{float}
+  - \usepackage[polish]{babel}
+geometry: margin=2cm
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.align = "center",
+  fig.width = 7,
+  fig.height = 3.5,
+  out.width = "85%",
+  dev = "png",
+  dpi = 300
+)
+library(datasets)
+library(dplyr)
+library(rsample)
+library(ggplot2)
+library(tidyr)
+```
+# Klasyfikacja na podstawie modelu regresji liniowej
+
+## Podstawowe informacje na temat analizowanych danych
+```{r, include=FALSE}
+set.seed(769)
+
+irysy = iris
+
+irysy <- irysy %>% rename(all_of(c(
+  PL = 'Petal.Length',
+  PW = 'Petal.Width',
+  SL = 'Sepal.Length',
+  SW = 'Sepal.Width'
+)))
+
+gatunki <- irysy$Species %>% unique
+gatunki
+```
+
+Model **regresji liniowej** budowany będzie na podstawie zbioru danych **iris** z pakietu *datasets*. 
+
+Mamy **3 klasy** (gatunki irysów): *setosa*, *versicolor*, *virginica* oraz **4 zmienne objaśniające**: *Petal.Length*, *Petal.Width*, *Sepal.Length* i *Sepal.Width*.
+
+## Podział danych
+
+```{r, include=FALSE}
 split <- irysy %>% initial_split(prop = 2/3) 
 train <- training(split)
 test <- testing(split)
 ```
+
+W celu zaprojektowania regresji liniowej dane zostały losowo podzielone na następujące części:
+$\frac{2}{3}$ — danych zbiór uczący, $\frac{1}{3}$ — zbiór testowy. 
+
+```{r, echo=FALSE}
+# kodowanie klas na zmienne binarne
+encoder <- function(x){
+  row <- numeric(3)
+  row[which(gatunki == x)] <- 1
+  row
+}
+
+Y.train <- train$Species %>% sapply(encoder) %>% as.matrix %>% t
+Y.test <- test$Species %>% sapply(encoder) %>% as.matrix %>% t
+
+# przygotowanie macierzy zmiennych objaśniających
+X.train <- train %>% select(-Species) %>% as.matrix
+X.test <- test %>% select(-Species) %>% as.matrix
+
+# macierz współczynników
+B <- solve(t(X.train) %*% X.train) %*% t(X.train) %*% Y.train
+
+# predykcje
+
+# predykcje dla zbioru uczącego
+predicted.train <- X.train %*% B
+
+predicted.train.decoded <- apply(predicted.train, 1, which.max)
+predicted.train.gatunki <- gatunki[predicted.train.decoded]
+
+# macierz klasyfikacji dla zbioru uczącego
+macierz.klasyfikacji.train <- table(
+  rzeczywista = train$Species,
+  przewidziana = predicted.train.gatunki
+)
+predicted <- X.test %*% B
+
+predicted.decoded <- apply(predicted, 1, which.max)
+predicted.gatunki <- gatunki[predicted.decoded]
+```
+
+## Macierz współczynników
+
+```{r, echo=FALSE}
+B.df <- as.data.frame(B)
+
+colnames(B.df) <- gatunki
+B.df$zmienna <- rownames(B.df)
+
+B.long <- B.df %>%
+  pivot_longer(
+    cols = -zmienna,
+    names_to = "klasa",
+    values_to = "wspolczynnik"
+  )
+
+ggplot(B.long, aes(x = klasa, y = zmienna, fill = wspolczynnik)) +
+  geom_tile() +
+  geom_text(aes(label = round(wspolczynnik, 3))) +
+  labs(
+    x = "Klasa",
+    y = "Zmienna objaśniająca",
+    fill = "Współczynnik"
+  ) +
+  theme_minimal()
+```
+
+Na podstawie przedstawionych współczynników model wyznacza wartości punktowe dla poszczególnych klas, a następnie przypisuje obserwację do klasy z największą wartością. Z wykresu wynika, że dla klasy **setosa** największe znaczenie ma zmienna **SW**, natomiast dla klasy **virginica** największy dodatni wpływ ma zmienna **PW**.
+
+## Predykcje i ocena jakości modelu
+
+```{r, echo=FALSE}
+knitr::kable(
+  macierz.klasyfikacji.train,
+  caption = "Macierz klasyfikacji dla zbioru uczącego"
+)
+
+# dokładność dla zbioru uczącego
+accuracy.train <- sum(diag(macierz.klasyfikacji.train)) / sum(macierz.klasyfikacji.train)
+```
+
+Dokładność modelu dla danych uczących wynosi **`r round(accuracy.train * 100, 2)`%**. Nie jest to jednak najlepsza miara jakości modelu, ponieważ model oceniany jest na tych samych danych, na których był trenowany. Może to prowadzić do zawyżenia wyniku i nie pokazuje, jak dobrze model radzi sobie z nowymi obserwacjami.
+
+```{r, echo=FALSE}
+macierz.klasyfikacji <- table(
+  "Klasa rzeczywista" = test$Species,
+  "Klasa przewidziana" = predicted.gatunki
+)
+
+accuracy <- macierz.klasyfikacji %>% {
+  sum(diag(.)) / sum(.)
+}
+
+knitr::kable(
+  macierz.klasyfikacji,
+  caption = "Macierz klasyfikacji dla zbioru testowego"
+)
+```
+
+Dla zbioru testowego dokładność spada do **`r round(accuracy * 100, 2)`%**. Jest to bardziej wiarygodna ocena jakości modelu, ponieważ zbiór testowy nie był wykorzystywany podczas trenowania modelu. Wynik ten lepiej pokazuje zdolność modelu do klasyfikowania nowych obserwacji.
+
+
+```{r, echo=FALSE}
+predykcje.df <- data.frame(
+  obserwacja = 1:nrow(test),
+  klasa_rzeczywista = test$Species,
+  klasa_przewidziana = predicted.gatunki
+)
+
+
+ggplot(predykcje.df, aes(x = klasa_rzeczywista, fill = klasa_przewidziana)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Porównanie klas rzeczywistych i przewidzianych",
+    x = "Klasa rzeczywista",
+    y = "Liczba obserwacji",
+    fill = "Klasa przewidziana"
+  ) +
+  theme_minimal()
+```
+
+
+W macierzy klasyfikacji widoczny jest **efekt maskowania klas**. Model bardzo dobrze rozpoznaje gatunek *setosa*, ale myli część obserwacji należących do klas *versicolor* i *virginica*. Oznacza to, że dobra klasyfikacja jednej klasy może **zawyżać** ogólną dokładność modelu i **ukrywać błędy** popełniane dla pozostałych klas.
+
+## Budowa modelu liniowego dla rozszerzonej przestrzeni cech
+
+**Model rozszerzony** wykorzystuje nie tylko oryginalne zmienne, ale też ich kwadraty oraz iloczyny. Dzięki temu granice decyzyjne mogą być bardziej elastyczne niż w podstawowym modelu liniowym.
+
+```{r, include=FALSE}
+# DODATKOWE DANE
+irysy.poly <- irysy %>% transform(
+  PL.PW = PL * PW,
+  SL.SW = SL * SW,
+  PL.SL = PL * SL,
+  PL.SW = PL * SW,
+  PW.SL = PW * SL,
+  PW.SW = PW * SW, 
+  PL2 = PL * PL,
+  SL2 = SL * SL,
+  SW2 = SW * SW,
+  PW2 = PW * PW
+)
+
+# PODZIAL DANYCH
+split.poly <- irysy.poly %>% initial_split(prop = 2/3) 
+
+train.poly <- training(split.poly)
+test.poly <- testing(split.poly)
+
+# KODOWANIE KLAS
+Y.train.poly <- train.poly$Species %>% sapply(encoder) %>% as.matrix %>% t
+Y.test.poly <- test.poly$Species %>% sapply(encoder) %>% as.matrix %>% t
+
+X.train.poly <- train.poly %>% select(-Species) %>% as.matrix
+X.test.poly <- test.poly %>% select(-Species) %>% as.matrix
+
+# MODEL
+B.poly <- solve(t(X.train.poly) %*% X.train.poly) %*%
+  t(X.train.poly) %*% Y.train.poly
+
+# PREDYKCJE
+predicted.poly <- X.test.poly %*% B.poly
+
+predicted.decoded.poly <- apply(predicted.poly, 1, which.max)
+predicted.gatunki.poly <- gatunki[predicted.decoded.poly]
+```
+
+```{r, echo=FALSE}
+# OCENA MODELU
+macierz.klasyfikacji.poly <- table(
+  "Klasa rzeczywista" = test.poly$Species,
+  "Klasa przewidziana" = predicted.gatunki.poly
+)
+
+knitr::kable(
+  macierz.klasyfikacji.poly,
+  caption = "Macierz klasyfikacji dla modelu wielomianowego"
+)
+
+accuracy.poly <- macierz.klasyfikacji.poly %>% {
+  sum(diag(.)) / sum(.)
+}
+```
+
+Dokładność modelu liniowego dla rozszerzonej przestrzeni cech wynosi **`r round(accuracy.poly * 100, 2)`%**, co przebija dokładność modelu prostego o **`r round((accuracy.poly - accuracy) * 100, 2)`** punktów procentowych. Poprawa wyniku sugeruje, że dodanie składników wielomianowych oraz interakcji między zmiennymi pozwoliło modelowi lepiej uchwycić zależności występujące w danych. Oznacza to, że granice między klasami **nie są w pełni liniowe**, a rozszerzenie przestrzeni cech poprawia zdolność modelu do rozróżniania gatunków.
+
+
+
